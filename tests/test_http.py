@@ -9,6 +9,8 @@ import unittest
 import six
 import fs
 
+from contextlib import closing
+
 from fs.expose.http import PyfilesystemThreadingServer, PyfilesystemServerHandler
 from six.moves.urllib.request import urlopen, Request
 from six.moves.urllib.error import HTTPError
@@ -68,9 +70,9 @@ class TestExposeHTTP(unittest.TestCase):
         cls.test_fs.close()
 
     def test_get_file(self):
-        with urlopen(self._url('root.txt')) as res:
+        with closing(urlopen(self._url('root.txt'))) as res:
             self.assertEqual(res.read(), b'Hello, World!')
-        with urlopen(self._url('top/file.bin')) as res:
+        with closing(urlopen(self._url('top/file.bin'))) as res:
             self.assertEqual(res.read(), b'Hi there!')
 
     def test_get_file_not_found(self):
@@ -79,7 +81,7 @@ class TestExposeHTTP(unittest.TestCase):
         self.assertEqual(err.exception.code, 404)
 
     def test_list_directory(self):
-        with urlopen(self._url('top')) as res:
+        with closing(urlopen(self._url('top'))) as res:
             text = res.read()
             self.assertIn(b'<h2>Directory listing for /top/</h2>', text)
             self.assertIn(b'<a href="file.bin">file.bin</a>', text)
@@ -87,7 +89,7 @@ class TestExposeHTTP(unittest.TestCase):
 
         self.test_fs.remove('top/file.bin')
 
-        with urlopen(self._url('top')) as res:
+        with closing(urlopen(self._url('top'))) as res:
             text = res.read()
             self.assertNotIn(b'<a href="file.bin">file.bin</a>', text)
             self.assertIn(b'<a href="middle/">middle/</a>', text)
@@ -111,7 +113,7 @@ class TestExposeHTTP(unittest.TestCase):
         request.add_header("Content-Type", "multipart/form-data; boundary=-DATA")
         request.get_method = lambda: "POST"
 
-        with urlopen(request) as res:
+        with closing(urlopen(request)) as res:
             self.assertEqual(res.code, 200)
 
         self.assertTrue(self.test_fs.exists('top/middle/upload.txt'))
@@ -120,12 +122,12 @@ class TestExposeHTTP(unittest.TestCase):
     def test_head_request(self):
         request = Request(self._url('root.txt'))
         request.get_method = lambda : 'HEAD'
-        with urlopen(request) as res:
-            self.assertEqual(res.getheader('Content-type'), 'text/plain')
-            self.assertEqual(int(res.getheader('Content-Length')), len(b'Hello, World!'))
+        with closing(urlopen(request)) as res:
+            self.assertEqual(res.headers['Content-type'], 'text/plain')
+            self.assertEqual(int(res.headers['Content-Length']), len(b'Hello, World!'))
 
     def test_mime_type(self):
         request = Request(self._url('video.mp4'))
         request.get_method = lambda : 'HEAD'
-        with urlopen(request) as res:
-            self.assertEqual(res.getheader('Content-type'), 'video/mp4')
+        with closing(urlopen(request)) as res:
+            self.assertEqual(res.headers['Content-type'], 'video/mp4')
