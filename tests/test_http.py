@@ -11,10 +11,13 @@ import fs
 
 from contextlib import closing
 
-from fs.expose.http import PyfilesystemThreadingServer, PyfilesystemServerHandler
+from fs.expose.http import PyfilesystemServerHandler, serve
+from fs.errors import PermissionDenied
 from six.moves.urllib.request import urlopen, Request
 from six.moves.urllib.error import HTTPError
 from six.moves.urllib.parse import quote
+
+from .utils import mock
 
 
 class TestGuessType(unittest.TestCase):
@@ -35,7 +38,6 @@ class TestGuessType(unittest.TestCase):
         self.assertEqual(self.mimetype('FILE.BULLSHIT'), 'application/octet-stream')
 
 
-
 class TestExposeHTTP(unittest.TestCase):
 
     host = 'localhost'
@@ -49,12 +51,7 @@ class TestExposeHTTP(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.test_fs = fs.open_fs('mem://')
-        handler = PyfilesystemServerHandler(cls.test_fs)
-        adress = (cls.host, cls.port)
-        cls.server = PyfilesystemThreadingServer(adress, handler)
-        cls.server_thread = threading.Thread(target=cls.server.serve_forever)
-        cls.server_thread.daemon = False
-        cls.server_thread.start()
+        cls.server_thread = serve(cls.test_fs, cls.host, cls.port)
 
     def setUp(self):
         self.test_fs.makedirs('top/middle/bottom')
@@ -68,7 +65,7 @@ class TestExposeHTTP(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.shutdown()
+        cls.server_thread.shutdown()
         cls.server_thread.join()
         cls.test_fs.close()
 
@@ -101,6 +98,11 @@ class TestExposeHTTP(unittest.TestCase):
             self.assertNotIn(b'<a href="file.bin">file.bin</a>', text)
             self.assertIn(b'<a href="middle/">middle/</a>', text)
 
+        with mock.patch.object(self.test_fs, 'islink', new=lambda _: True):
+            with closing(urlopen(self._url('top'))) as res:
+                text = res.read()
+                self.assertIn(b'<a href="middle/">middle@</a>', text)
+
     def test_upload(self):
 
         self.assertFalse(self.test_fs.exists('top/middle/upload.txt'))
@@ -118,6 +120,7 @@ class TestExposeHTTP(unittest.TestCase):
         request = Request(self._url('top/middle/'), data=data)
         request.add_header("Content-Length", 1000)
         request.add_header("Content-Type", "multipart/form-data; boundary=-DATA")
+        request.add_header("Referer", 'top/middle/')
         request.get_method = lambda: "POST"
 
         with closing(urlopen(request)) as res:
@@ -138,3 +141,10 @@ class TestExposeHTTP(unittest.TestCase):
         request.get_method = lambda : 'HEAD'
         with closing(urlopen(request)) as res:
             self.assertEqual(res.headers['Content-type'], 'video/mp4')
+
+    def test_permission_denied(self):
+        with mock.patch.object(self.test_fs, 'listdir', mock.MagicMock()) as mock_method:
+            mock_method.side_effect = PermissionDenied
+            with self.assertRaises(HTTPError) as err:
+                urlopen(self._url('/'))
+            self.assertEqual(err.exception.code, 403)

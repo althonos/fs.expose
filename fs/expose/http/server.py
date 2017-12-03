@@ -107,7 +107,7 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         content_type = self.headers['content-type']
         if not content_type:
             return (False, "Content-Type header doesn't contain boundary")
-        boundary = content_type.split("=")[1].encode()
+        boundary = content_type.split("=")[1].encode('utf-8')
         remainbytes = int(self.headers['content-length'])
         line = self.rfile.readline()
         remainbytes -= len(line)
@@ -134,16 +134,13 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
             return (False, "Can't create file to write, do you have permission to write?")
 
         preline = self.rfile.readline()
-        print(preline)
         remainbytes -= len(preline)
         while remainbytes > 0:
             print(line)
             line = self.rfile.readline()
             remainbytes -= len(line)
             if boundary in line:
-                preline = preline[0:-1]
-                if preline.endswith(b'\r'):
-                    preline = preline[0:-1]
+                preline = preline.rstrip(b'\r\n')
                 out.write(preline)
                 out.close()
                 return (True, "File '%s' upload success!" % fn)
