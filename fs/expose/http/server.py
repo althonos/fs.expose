@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-
+# coding: utf-8
 """Simple HTTP Server With Upload.
 
 This module builds on BaseHTTPServer by implementing the standard GET
@@ -13,7 +12,6 @@ see:
 
 https://github.com/PyFilesystem/pyfilesystem2
 
-
 """
 
 __version__ = "0.1.0"
@@ -26,7 +24,6 @@ import mimetypes
 import os
 import re
 import shutil
-import threading
 
 import six
 
@@ -36,7 +33,7 @@ from ...opener import open_fs
 
 from six.moves.socketserver import ThreadingMixIn
 from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
-from six.moves.urllib_parse import quote, unquote
+from six.moves.urllib.parse import quote, unquote
 
 
 class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
@@ -53,6 +50,7 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
     """
 
     server_version = "PyfilesystemServerHandler/{}".format(__version__)
+    _regex_filename = re.compile(r'Content-Disposition.*name="file"; filename="(.*)"')
 
     def __init__(self, filesystem):
         self.fs = open_fs(filesystem)
@@ -116,11 +114,11 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
             return (False, "Content NOT begin with boundary")
         line = self.rfile.readline()
         remainbytes -= len(line)
-        fn = re.findall(r'Content-Disposition.*name="file"; filename="(.*)"', line.decode())
+        fn = self._regex_filename.search(line.decode()).group(1)
         if not fn:
             return (False, "Can't find out file name...")
         path = self.translate_path(self.path)
-        fn = combine(path, fn[0])
+        fn = combine(path, fn)
         line = self.rfile.readline()
         remainbytes -= len(line)
         line = self.rfile.readline()
@@ -135,8 +133,10 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
             return (False, "Can't create file to write, do you have permission to write?")
 
         preline = self.rfile.readline()
+        print(preline)
         remainbytes -= len(preline)
         while remainbytes > 0:
+            print(line)
             line = self.rfile.readline()
             remainbytes -= len(line)
             if boundary in line:
@@ -214,8 +214,8 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         """
         try:
             contents = self.fs.listdir(path)
-        except errors.DirectoryExpected:
-            self.send_error(404, "No permission to list directory")
+        except errors.PermissionDenied:
+            self.send_error(403, "No permission to list directory")
             return None
         contents.sort(key=lambda a: a.lower())
         f = six.BytesIO()
@@ -292,7 +292,8 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         """
         shutil.copyfileobj(source, outputfile)
 
-    def guess_type(self, path):
+    @staticmethod
+    def guess_type(path):
         """Guess the type of a file.
 
         The default implementation looks the file's extension up in the
@@ -307,38 +308,12 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
             str: a MIME type (of the form type/subtype).
 
         """
-        base, ext = splitext(path)
-        if ext in self.extensions_map:
-            return self.extensions_map[ext]
-        ext = ext.lower()
-        if ext in self.extensions_map:
-            return self.extensions_map[ext]
-        else:
-            return self.extensions_map['']
+        mimetype, encoding = mimetypes.guess_type(path)
+        return mimetype or 'application/octet-stream'
 
-    if not mimetypes.inited:
-        mimetypes.init() # try to read system mime.types
-    extensions_map = mimetypes.types_map.copy()
+    if not mimetypes.inited:    # pragma: no cover
+        mimetypes.init()
 
 
 class PyfilesystemThreadingServer(ThreadingMixIn, HTTPServer):
     pass
-
-
-
-def serve(filesystem, host='127.0.0.1', port=8000):
-
-        # create a handler for the given filesystem
-        handler = PyfilesystemServerHandler(filesystem)
-
-        # Port 0 means to select an arbitrary unused port
-        server = PyfilesystemThreadingServer((host, port), handler)
-
-        print('Serving Filesystem: {!r}'.format(filesystem))
-        print('Started Server at http://{}:{}'.format(host, port))
-
-        server_thread = threading.Thread(target=server.serve_forever)
-        server_thread.daemon = False
-        server_thread.start()
-
-        return server_thread
