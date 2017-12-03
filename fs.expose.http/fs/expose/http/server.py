@@ -44,8 +44,8 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
 
     This serves files from the current directory and any of its
     subdirectories. The MIME type for files is determined by
-    calling the .guess_type() method. And can reveive file uploaded
-    by client.
+    calling the `~PyfilesystemServerHandler.guess_type` method.
+    And can reveive file uploaded by client.
 
     The GET/HEAD/POST requests are identical except that the HEAD
     request omits the actual contents of the file.
@@ -61,20 +61,23 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         super(PyfilesystemServerHandler, self).__init__(*args, **kwargs)
 
     def do_GET(self):
-        """Serve a GET request."""
+        """Serve a GET request.
+        """
         f = self.send_head()
         if f:
             self.copyfile(f, self.wfile)
             f.close()
 
     def do_HEAD(self):
-        """Serve a HEAD request."""
+        """Serve a HEAD request.
+        """
         f = self.send_head()
         if f:
             f.close()
 
     def do_POST(self):
-        """Serve a POST request."""
+        """Serve a POST request.
+        """
         r, info = self.deal_post_data()
         print((r, info, "by: ", self.client_address))
         f = six.BytesIO()
@@ -149,14 +152,14 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         return (False, "Unexpect Ends of data.")
 
     def send_head(self):
-        """Common code for GET and HEAD commands.
+        """Send the response code and MIME headers.
 
-        This sends the response code and MIME headers.
+        This code is common to both GET and HEAD commands.
 
-        Return value is either a file object (which has to be copied
-        to the outputfile by the caller unless the command was HEAD,
-        and must be closed by the caller under all circumstances), or
-        None, in which case the caller has nothing further to do.
+        Returns:
+            None: when an error occured.
+            six.BytesIO: a file object which has to be copied to the output
+                         file by the caller and must always be closed.
 
         """
         path = self.translate_path(self.path)
@@ -196,14 +199,19 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         return f
 
     def list_directory(self, path):
-        """Helper to produce a directory listing (absent index.html).
+        """Produce a directory listing.
 
-        Return value is either a file object, or None (indicating an
-        error).  In either case, the headers are sent, making the
-        interface the same as for send_head().
+        The headers are always sent, making the interface the same as for
+        `~PyfilesystemServerHandler.send_head`.
+
+        Arguments:
+            path (str): the path to a filesystem resource.
+
+        Returns:
+            six.BytesIO: an HTML page listing the directory contents.
+            None: when an error occured while trying to list the directory.
 
         """
-
         try:
             contents = self.fs.listdir(path)
         except errors.DirectoryExpected:
@@ -242,12 +250,16 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         return f
 
     def translate_path(self, path):
-        """Translate a /-separated PATH to the local filename syntax.
+        """Translate a path to the local filename syntax.
+
+        Arguments:
+            path (str): a slash separated path.
 
         Components that mean special things to the local file system
-        (e.g. drive or directory names) are ignored.  (XXX They should
-        probably be diagnosed.)
+        (e.g. drive or directory names) are ignored.
 
+        Todo:
+            * Diagnose special components
         """
         # abandon query parameters
         path = path.split('?',1)[0]
@@ -270,34 +282,31 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
     def copyfile(self, source, outputfile):
         """Copy all data between two file objects.
 
-        The SOURCE argument is a file object open for reading
-        (or anything with a read() method) and the DESTINATION
-        argument is a file object open for writing (or
-        anything with a write() method).
+        Arguments:
+            source (io.IOBase): a file object open for reading.
+            dest (io.IOBase): a file object open for writing.
 
-        The only reason for overriding this would be to change
-        the block size or perhaps to replace newlines by CRLF
-        -- note however that this the default server uses this
-        to copy binary data as well.
-
+        The only reason for overriding this would be to change the block
+        size or perhaps to replace newlines by CRLF -- note however that
+        the default server uses this method to copy binary data as well.
         """
         shutil.copyfileobj(source, outputfile)
 
     def guess_type(self, path):
         """Guess the type of a file.
 
-        Argument is a PATH (a filename).
+        The default implementation looks the file's extension up in the
+        `~PyfilesystemServerHandler.extensions_map`, using
+        ``application/octet-stream`` as a default; however it would be
+        permissible (if slow) to look inside the data to make a better guess.
 
-        Return value is a string of the form type/subtype,
-        usable for a MIME Content-type header.
+        Arguments:
+            path (str): a filename.
 
-        The default implementation looks the file's extension
-        up in the table self.extensions_map, using application/octet-stream
-        as a default; however it would be permissible (if
-        slow) to look inside the data to make a better guess.
+        Returns:
+            str: a MIME type (of the form type/subtype).
 
         """
-
         base, ext = splitext(path)
         if ext in self.extensions_map:
             return self.extensions_map[ext]
