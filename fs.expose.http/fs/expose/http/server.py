@@ -31,7 +31,7 @@ import threading
 import six
 
 from ... import errors
-from ...path import splitext, normpath, combine
+from ...path import combine, forcedir, normpath, splitext
 from ...opener import open_fs
 
 from six.moves.socketserver import ThreadingMixIn
@@ -128,7 +128,7 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
 
         try:
             out = self.fs.open(fn, 'wb')
-        except FileExpected:
+        except errors.FileExpected:
             return (False, "Can't create file to write, do you have permission to write?")
 
         preline = self.rfile.readline()
@@ -205,11 +205,11 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         """
 
         try:
-            list = self.fs.listdir(path)
+            contents = self.fs.listdir(path)
         except errors.DirectoryExpected:
             self.send_error(404, "No permission to list directory")
             return None
-        list.sort(key=lambda a: a.lower())
+        contents.sort(key=lambda a: a.lower())
         f = six.BytesIO()
         displaypath = cgi.escape(unquote(self.path))
         f.write(b'<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
@@ -221,13 +221,12 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         f.write(b"<input name=\"file\" type=\"file\"/>")
         f.write(b"<input type=\"submit\" value=\"upload\"/></form>\n")
         f.write(b"<hr>\n<ul>\n")
-        for name in list:
+        for name in contents:
             fullname = combine(path, name)
             displayname = linkname = name
             # Append / for directories or @ for symbolic links
             if self.fs.isdir(fullname):
-                displayname = name + "/"
-                linkname = name + "/"
+                displayname = linkname = forcedir(name)
             if self.fs.islink(fullname):
                 displayname = name + "@"
                 # Note: a link to a directory displays with @ and links with /
@@ -262,6 +261,10 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
             # ~ head, word = os.path.split(word)
             # ~ if word in (os.curdir, os.pardir): continue
             # ~ path = os.path.join(path, word)
+
+        if six.PY2:
+            path = path.decode('utf-8')
+
         return path
 
     def copyfile(self, source, outputfile):
@@ -323,7 +326,7 @@ def serve(filesystem, host='127.0.0.1', port=8000):
         server = PyfilesystemThreadingServer((host, port), handler)
 
         print('Serving Filesystem: {!r}'.format(filesystem))
-        print('Started Server on {} Port {}'.format(host, port))
+        print('Started Server at http://{}:{}'.format(host, port))
 
         server_thread = threading.Thread(target=server.serve_forever)
         server_thread.daemon = False
