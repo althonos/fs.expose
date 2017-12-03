@@ -21,31 +21,25 @@ __all__ = ["PyfsFileServerHandler"]
 __author__ = "merlink"
 __home_page__ = "https://github.com/PyFilesystem/pyfilesystem2"
 
-import os
-import http.server
-import urllib.request, urllib.parse, urllib.error
 import cgi
-import shutil
 import mimetypes
-import threading
+import os
 import re
-from io import BytesIO
+import shutil
+import threading
 
-from fs import base
-from fs.path import *
-from fs.errors import *
+import six
+
+from ... import errors
+from ...path import splitext, normpath, combine
+from ...opener import open_fs
+
+from six.moves.socketserver import ThreadingMixIn
+from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from six.moves.urllib_parse import quote, unquote
 
 
-from socketserver import ThreadingMixIn
-from http.server import SimpleHTTPRequestHandler, HTTPServer
-
-
-# def create_handler(filesystem):
-#
-#     if not isinstance(filesystem, base.FS):
-#         raise TypeError("filesystem must be a FS instance")
-
-class PyfilesystemServerHandler(http.server.BaseHTTPRequestHandler):
+class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
     """Simple HTTP request handler with GET/HEAD/POST commands.
 
     This serves files from the current directory and any of its
@@ -61,7 +55,7 @@ class PyfilesystemServerHandler(http.server.BaseHTTPRequestHandler):
     server_version = "PyfilesystemServerHandler/{}".format(__version__)
 
     def __init__(self, filesystem):
-        self.fs = filesystem
+        self.fs = open_fs(filesystem)
 
     def __call__(self, *args, **kwargs):
         super(PyfilesystemServerHandler, self).__init__(*args, **kwargs)
@@ -83,7 +77,7 @@ class PyfilesystemServerHandler(http.server.BaseHTTPRequestHandler):
         """Serve a POST request."""
         r, info = self.deal_post_data()
         print((r, info, "by: ", self.client_address))
-        f = BytesIO()
+        f = six.BytesIO()
         f.write(b'<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
         f.write(b"<html>\n<title>Upload Result Page</title>\n")
         f.write(b"<body>\n<h2>Upload Result Page</h2>\n")
@@ -190,7 +184,7 @@ class PyfilesystemServerHandler(http.server.BaseHTTPRequestHandler):
             # newline translations, making the actual size of the content
             # transmitted *less* than the content-length!
             f = self.fs.open(path, 'rb')
-        except ResourceNotFound:
+        except errors.ResourceNotFound:
             self.send_error(404, "File not found")
             return None
         self.send_response(200)
@@ -212,12 +206,12 @@ class PyfilesystemServerHandler(http.server.BaseHTTPRequestHandler):
 
         try:
             list = self.fs.listdir(path)
-        except DirectoryExpected:
+        except errors.DirectoryExpected:
             self.send_error(404, "No permission to list directory")
             return None
         list.sort(key=lambda a: a.lower())
-        f = BytesIO()
-        displaypath = cgi.escape(urllib.parse.unquote(self.path))
+        f = six.BytesIO()
+        displaypath = cgi.escape(unquote(self.path))
         f.write(b'<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
         f.write(b'<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/></head>')
         f.write(("<html>\n<title>Directory listing for %s</title>\n" % displaypath).encode())
@@ -238,7 +232,7 @@ class PyfilesystemServerHandler(http.server.BaseHTTPRequestHandler):
                 displayname = name + "@"
                 # Note: a link to a directory displays with @ and links with /
             f.write(('<li><a href="%s">%s</a>\n'
-                    % (urllib.parse.quote(linkname), cgi.escape(displayname))).encode())
+                    % (quote(linkname), cgi.escape(displayname))).encode())
         f.write(b"</ul>\n<hr>\n</body>\n</html>\n")
         length = f.tell()
         f.seek(0)
@@ -259,7 +253,7 @@ class PyfilesystemServerHandler(http.server.BaseHTTPRequestHandler):
         # abandon query parameters
         path = path.split('?',1)[0]
         path = path.split('#',1)[0]
-        path = normpath(urllib.parse.unquote(path))
+        path = normpath(unquote(path))
         # ~ words = path.split('/')
         # ~ words = [_f for _f in words if _f]
         # ~ path = os.getcwd()
@@ -314,8 +308,6 @@ class PyfilesystemServerHandler(http.server.BaseHTTPRequestHandler):
         mimetypes.init() # try to read system mime.types
     extensions_map = mimetypes.types_map.copy()
 
-    # return PyfilesystemServerHandler
-
 
 class PyfilesystemThreadingServer(ThreadingMixIn, HTTPServer):
     pass
@@ -336,3 +328,5 @@ def serve(filesystem, host='127.0.0.1', port=8000):
         server_thread = threading.Thread(target=server.serve_forever)
         server_thread.daemon = False
         server_thread.start()
+
+        return server_thread
