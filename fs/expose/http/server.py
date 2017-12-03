@@ -90,9 +90,9 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
             f.write(b"<strong>Failed:</strong>")
         f.write(info.encode('utf-8'))
         if 'referer' in self.headers:
-            f.write('<br><a href="%s">back</a>'.format(self.headers['referer']).encode('utf-8'))
+            f.write('<br><a href="{}">back</a>'.format(self.headers['referer']).encode('utf-8'))
         f.write("<hr><small>Powered by: {}, check new version at ".format(__author__).encode('utf-8'))
-        f.write('<a href="%s">'.format(__home_page__).encode('utf-8'))
+        f.write('<a href="{}">'.format(__home_page__).encode('utf-8'))
         f.write(b"here</a>.</small></body>\n</html>\n")
         length = f.tell()
         f.seek(0)
@@ -143,7 +143,7 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
                 preline = preline.rstrip(b'\r\n')
                 out.write(preline)
                 out.close()
-                return (True, "File '%s' upload success!" % fn)
+                return (True, "File '{}' upload success!".format(fn))
             else:
                 out.write(preline)
                 preline = line
