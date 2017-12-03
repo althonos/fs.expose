@@ -1,7 +1,7 @@
 ``fs.expose``
 =============
 
-|Source| |PyPI| |Travis| |Codecov| |Codacy| |Format| |License|
+|Source| |PyPI| |Travis| |Codecov| |Format| |License|
 
 .. .. |Codacy| image:: https://img.shields.io/codacy/grade/9734bea6ec004cc4914a377d9e9f54bd/master.svg?style=flat-square&maxAge=300
    :target: https://www.codacy.com/app/althonos/fs.expose/dashboard
@@ -33,6 +33,6 @@ Expose Pyfilesystem2 objects on several interfaces.
 
 Credits
 =======
-* [merlink](https://github.com/merlink01) -- port of the Dokan and HTTP code
+* `merlink <https://github.com/merlink01>`_ -- port of the Dokan and HTTP code
   to Pyfilesystem2
-* [Liryna](https://github.com/Liryna) -- original Dokan PyFilesystem module
+* `Liryna <https://github.com/Liryna>`_ -- original Dokan PyFilesystem module
