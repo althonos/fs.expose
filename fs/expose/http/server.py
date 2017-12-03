@@ -76,15 +76,15 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
     def do_POST(self):
         """Serve a POST request.
         """
-        r, info = self.deal_post_data()
-        print((r, info, "by: ", self.client_address))
+        code, info = self.deal_post_data()
+        print((code, info, "by: ", self.client_address))
         f = six.BytesIO()
         f.write(b'<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
         f.write(b'<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/></head>')
         f.write(b"<html>\n<title>Upload Result Page</title>\n")
         f.write(b"<body>\n<h2>Upload Result Page</h2>\n")
         f.write(b"<hr>\n")
-        if r:
+        if code == 200:
             f.write(b"<strong>Success:</strong>")
         else:
             f.write(b"<strong>Failed:</strong>")
@@ -96,7 +96,7 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         f.write(b"here</a>.</small></body>\n</html>\n")
         length = f.tell()
         f.seek(0)
-        self.send_response(200)
+        self.send_response(code, info)
         self.send_header("Content-Type", "text/html")
         self.send_header("Content-Length", str(length))
         self.end_headers()
@@ -105,49 +105,47 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
 
     def deal_post_data(self):
         content_type = self.headers['content-type']
-        if not content_type:
-            return (False, "Content-Type header doesn't contain boundary")
+        if not content_type or not 'boundary' in content_type:
+            return 400, "'Content-Type' header does not contain a boundary"
         boundary = content_type.split("=")[1].encode('utf-8')
+        if not 'Content-Length' in self.headers:  # pragma: no cover
+            return 411, "'Content-length' header required"
         remainbytes = int(self.headers['content-length'])
-        line = self.rfile.readline()
+        line = self.rfile.readline() if remainbytes > 0 else b""
         remainbytes -= len(line)
         if not boundary in line:
-            return (False, "Content NOT begin with boundary")
-        line = self.rfile.readline()
+            return 400, "content does not begin with boundary"
+        line = self.rfile.readline() if remainbytes > 0 else b""
         remainbytes -= len(line)
-        fn = self._regex_filename.search(line.decode()).group(1)
-        if not fn:
-            return (False, "Can't find out file name...")
+        filename = self._regex_filename.search(line.decode("utf-8"))
+        if not filename:
+            return 400, "cannot find filename"
         path = self.translate_path(self.path)
-        fn = combine(path, fn)
-        line = self.rfile.readline()
+        filename = combine(path, filename.group(1))
+        line = self.rfile.readline() if remainbytes > 0 else b""
         remainbytes -= len(line)
-        line = self.rfile.readline()
+        line = self.rfile.readline() if remainbytes > 0 else b""
         remainbytes -= len(line)
-
-        if fn == '/':
-            return (False, "Can't create file with name /")
 
         try:
-            out = self.fs.open(fn, 'wb')
-        except errors.FileExpected:
-            return (False, "Can't create file to write, do you have permission to write?")
+            out = self.fs.open(filename, 'wb')
+        except (errors.PermissionDenied, errors.FileExpected):
+            return 403, "cannot create file '{}'".format(filename)
 
-        preline = self.rfile.readline()
+        preline = self.rfile.readline() if remainbytes > 0 else b""
         remainbytes -= len(preline)
         while remainbytes > 0:
-            print(line)
             line = self.rfile.readline()
             remainbytes -= len(line)
             if boundary in line:
                 preline = preline.rstrip(b'\r\n')
                 out.write(preline)
                 out.close()
-                return (True, "File '{}' upload success!".format(fn))
+                return 200, "file '{}' uploaded successfully".format(filename)
             else:
                 out.write(preline)
                 preline = line
-        return (False, "Unexpect Ends of data.")
+        return 400, "unexpected end of data"
 
     def send_head(self):
         """Send the response code and MIME headers.

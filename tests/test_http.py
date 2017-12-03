@@ -104,9 +104,7 @@ class TestExposeHTTP(unittest.TestCase):
                 self.assertIn(b'<a href="middle/">middle@</a>', text)
 
     def test_upload(self):
-
         self.assertFalse(self.test_fs.exists('top/middle/upload.txt'))
-
         data = textwrap.dedent("""
         -DATA
         Content-Disposition: form-data; name="file"; filename="upload.txt"
@@ -118,10 +116,8 @@ class TestExposeHTTP(unittest.TestCase):
         """).lstrip().encode('utf-8')
 
         request = Request(self._url('top/middle/'), data=data)
-        request.add_header("Content-Length", 1000)
         request.add_header("Content-Type", "multipart/form-data; boundary=-DATA")
         request.add_header("Referer", 'top/middle/')
-        request.get_method = lambda: "POST"
 
         with closing(urlopen(request)) as res:
             self.assertEqual(res.code, 200)
@@ -148,3 +144,81 @@ class TestExposeHTTP(unittest.TestCase):
             with self.assertRaises(HTTPError) as err:
                 urlopen(self._url('/'))
             self.assertEqual(err.exception.code, 403)
+
+    def test_upload_no_boundary(self):
+        with self.assertRaises(HTTPError) as handler:
+            data = b""
+            request = Request(self._url('top/middle/'), data=data)
+            request.add_header("Content-Length", len(data))
+            request.add_header("Content-Type", "multipart/form-data")
+            request.get_method = lambda: "POST"
+            urlopen(request)
+        self.assertEqual(handler.exception.code, 400)
+        self.assertEqual(
+            handler.exception.reason,
+            "'Content-Type' header does not contain a boundary"
+        )
+
+    def test_upload_wrong_data(self):
+        with self.assertRaises(HTTPError) as handler:
+            data = b"\n"
+            request = Request(self._url('top/middle/'), data=data)
+            request.add_header("Content-Type", "multipart/form-data; boundary=-DATA")
+            request.add_header("Referer", 'top/middle/')
+            urlopen(request)
+        self.assertEqual(handler.exception.code, 400)
+        self.assertEqual(
+            "content does not begin with boundary",
+            handler.exception.reason,
+        )
+
+    def test_upload_no_filename(self):
+        with self.assertRaises(HTTPError) as handler:
+            data = b"--DATA\n"
+            request = Request(self._url('top/middle/'), data=data)
+            request.add_header("Content-Type", "multipart/form-data; boundary=-DATA")
+            request.add_header("Referer", 'top/middle/')
+            urlopen(request)
+        self.assertEqual(handler.exception.code, 400)
+        self.assertEqual(
+            "cannot find filename",
+            handler.exception.reason,
+        )
+
+    def test_upload_directory(self):
+        with self.assertRaises(HTTPError) as handler:
+            data = textwrap.dedent("""
+                -DATA
+                Content-Disposition: form-data; name="file"; filename="/"
+                Content-Type: text/plain
+                -DATA--
+                """).lstrip().encode('utf-8')
+            request = Request(self._url('top/middle/'), data=data)
+            request.add_header("Content-Type", "multipart/form-data; boundary=-DATA")
+            request.add_header("Referer", 'top/middle/')
+            urlopen(request)
+        self.assertEqual(handler.exception.code, 403)
+        self.assertEqual(
+            "cannot create file '/top/middle/'",
+            handler.exception.reason,
+        )
+
+    def test_upload_unexpected_end_of_data(self):
+        with self.assertRaises(HTTPError) as handler:
+            data = textwrap.dedent("""
+                -DATA
+                Content-Disposition: form-data; name="file"; filename="test.txt"
+                Content-Type: text/plain
+
+                Beginning of test text
+
+                """).lstrip().encode('utf-8')
+            request = Request(self._url('top/middle/'), data=data)
+            request.add_header("Content-Type", "multipart/form-data; boundary=-DATA")
+            request.add_header("Referer", 'top/middle/')
+            urlopen(request)
+        self.assertEqual(handler.exception.code, 400)
+        self.assertEqual(
+            "unexpected end of data",
+            handler.exception.reason,
+        )
