@@ -14,6 +14,7 @@ from contextlib import closing
 from fs.expose.http import PyfilesystemThreadingServer, PyfilesystemServerHandler
 from six.moves.urllib.request import urlopen, Request
 from six.moves.urllib.error import HTTPError
+from six.moves.urllib.parse import quote
 
 
 class TestGuessType(unittest.TestCase):
@@ -42,7 +43,8 @@ class TestExposeHTTP(unittest.TestCase):
 
     @classmethod
     def _url(cls, resource):
-        return "http://{}:{}/{}".format(cls.host, cls.port, resource)
+        safe_resource = quote(resource.encode('utf-8'))
+        return "http://{}:{}/{}".format(cls.host, cls.port, safe_resource)
 
     @classmethod
     def setUpClass(cls):
@@ -59,6 +61,7 @@ class TestExposeHTTP(unittest.TestCase):
         self.test_fs.settext('root.txt', 'Hello, World!')
         self.test_fs.setbytes('video.mp4', b'\x00\x00\x00 ftypisom\x00\x00\x02\x00')
         self.test_fs.setbytes('top/file.bin', b'Hi there!')
+        self.test_fs.setbytes('top/middle/bottom/☻.txt', b'Happy face !')
 
     def tearDown(self):
         self.test_fs.removetree('/')
@@ -74,6 +77,10 @@ class TestExposeHTTP(unittest.TestCase):
             self.assertEqual(res.read(), b'Hello, World!')
         with closing(urlopen(self._url('top/file.bin'))) as res:
             self.assertEqual(res.read(), b'Hi there!')
+
+    def test_get_file_unicode(self):
+        with closing(urlopen(self._url('top/middle/bottom/☻.txt'))) as res:
+            self.assertEqual(res.read(), b'Happy face !')
 
     def test_get_file_not_found(self):
         with self.assertRaises(HTTPError) as err:

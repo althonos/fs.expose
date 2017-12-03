@@ -264,10 +264,10 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         Todo:
             * Diagnose special components
         """
+
         # abandon query parameters
-        path = path.split('?',1)[0]
-        path = path.split('#',1)[0]
-        path = normpath(unquote(path))
+        path = unquote(path.split('?',1)[0].split('#')[0])
+        path = normpath(path.decode('utf-8') if six.PY2 else path)
         # ~ words = path.split('/')
         # ~ words = [_f for _f in words if _f]
         # ~ path = os.getcwd()
@@ -276,9 +276,6 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
             # ~ head, word = os.path.split(word)
             # ~ if word in (os.curdir, os.pardir): continue
             # ~ path = os.path.join(path, word)
-
-        if six.PY2:
-            path = path.decode('utf-8')
 
         return path
 
