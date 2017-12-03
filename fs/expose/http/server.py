@@ -80,6 +80,7 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         print((r, info, "by: ", self.client_address))
         f = six.BytesIO()
         f.write(b'<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
+        f.write(b'<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/></head>')
         f.write(b"<html>\n<title>Upload Result Page</title>\n")
         f.write(b"<body>\n<h2>Upload Result Page</h2>\n")
         f.write(b"<hr>\n")
@@ -87,20 +88,20 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
             f.write(b"<strong>Success:</strong>")
         else:
             f.write(b"<strong>Failed:</strong>")
-        f.write(info.encode())
-        f.write(("<br><a href=\"%s\">back</a>" % self.headers['referer']).encode())
-        f.write(b"<hr><small>Powerd By: %s, check new version at "%__author__.encode())
-        f.write(b"<a href=\"%s\">"%__home_page__.encode())
+        f.write(info.encode('utf-8'))
+        if 'referer' in self.headers:
+            f.write('<br><a href="%s">back</a>'.format(self.headers['referer']).encode('utf-8'))
+        f.write("<hr><small>Powered by: {}, check new version at ".format(__author__).encode('utf-8'))
+        f.write('<a href="%s">'.format(__home_page__).encode('utf-8'))
         f.write(b"here</a>.</small></body>\n</html>\n")
         length = f.tell()
         f.seek(0)
         self.send_response(200)
-        self.send_header("Content-type", "text/html")
+        self.send_header("Content-Type", "text/html")
         self.send_header("Content-Length", str(length))
         self.end_headers()
-        if f:
-            self.copyfile(f, self.wfile)
-            f.close()
+        self.copyfile(f, self.wfile)
+        f.close()
 
     def deal_post_data(self):
         content_type = self.headers['content-type']
@@ -222,12 +223,14 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
         displaypath = cgi.escape(unquote(self.path))
         f.write(b'<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
         f.write(b'<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/></head>')
-        f.write(("<html>\n<title>Directory listing for %s</title>\n" % displaypath).encode())
-        f.write(("<body>\n<h2>Directory listing for %s</h2>\n" % displaypath).encode())
+        f.write("<html>\n<title>Directory listing for {}</title>\n".format(
+            displaypath).encode('utf-8'))
+        f.write("<body>\n<h2>Directory listing for {}</h2>\n".format(
+            displaypath).encode('utf-8'))
         f.write(b"<hr>\n")
-        f.write(b"<form ENCTYPE=\"multipart/form-data\" method=\"post\">")
-        f.write(b"<input name=\"file\" type=\"file\"/>")
-        f.write(b"<input type=\"submit\" value=\"upload\"/></form>\n")
+        f.write(b'<form ENCTYPE="multipart/form-data" method="post">')
+        f.write(b'<input name="file" type="file"/>')
+        f.write(b'<input type="submit" value="upload"/></form>\n')
         f.write(b"<hr>\n<ul>\n")
         for name in contents:
             fullname = combine(path, name)
@@ -238,8 +241,8 @@ class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
             if self.fs.islink(fullname):
                 displayname = name + "@"
                 # Note: a link to a directory displays with @ and links with /
-            f.write(('<li><a href="%s">%s</a>\n'
-                    % (quote(linkname), cgi.escape(displayname))).encode())
+            f.write('<li><a href="{}">{}</a>\n'.format(
+                quote(linkname), cgi.escape(displayname)).encode('utf-8'))
         f.write(b"</ul>\n<hr>\n</body>\n</html>\n")
         length = f.tell()
         f.seek(0)
