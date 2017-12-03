@@ -1,0 +1,34 @@
+sudo: false
+language: python
+cache: pip
+
+python:
+- '2.7'
+- '3.3'
+- '3.4'
+- '3.5'
+- '3.6'
+- pypy
+- pypy-5.3.1
+
+matrix:
+  allow_failures:
+  - python: pypy
+  - python: pypy-5.3.1
+
+before_install:
+- docker pull sjourdan/alpine-sshd
+- pip install -U setuptools wheel
+
+install:
+- for lib in ./fs.expose*; do pip install $lib[dev,test]; done
+
+script:
+- for lib in ./fs.expose*; do cd $lib; green; cd ..; done
+
+after_script:
+- codecov
+
+notifications:
+  email:
+  - althonosdev@gmail.com

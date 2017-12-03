@@ -17,9 +17,9 @@ https://github.com/PyFilesystem/pyfilesystem2
 """
 
 __version__ = "0.1.0"
-__all__ = ["PyfsFileServerHandler"]
+__all__ = ["PyfilesystemServerHandler", "PyfilesystemThreadingServer"]
 __author__ = "merlink"
-__home_page__ = "https://github.com/PyFilesystem/pyfilesystem2"
+__home_page__ = "https://github.com/althonos/fs.expose"
 
 import cgi
 import mimetypes
