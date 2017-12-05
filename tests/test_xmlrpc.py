@@ -81,6 +81,3 @@ class TestExposeXMLRPC(unittest.TestCase):
         # ~ print(str(err.exception))
         # ~ assert 'fs.errors.DirectoryExpected' in str(err.exception)
 
-    def test_travis(self):
-        pass
-        
