@@ -1,5 +1,5 @@
-``fs.expose``
-=============
+fs.expose
+=========
 
 |Source| |PyPI| |Travis| |Codecov| |Format| |License|
 

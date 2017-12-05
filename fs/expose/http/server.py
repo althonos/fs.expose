@@ -14,11 +14,6 @@ https://github.com/PyFilesystem/pyfilesystem2
 
 """
 
-__version__ = "0.1.0"
-__all__ = ["PyfilesystemServerHandler", "PyfilesystemThreadingServer"]
-__author__ = "merlink"
-__home_page__ = "https://github.com/althonos/fs.expose"
-
 import cgi
 import mimetypes
 import os
@@ -27,14 +22,15 @@ import shutil
 
 import six
 
-from ... import errors
-from ...path import combine, forcedir, normpath, splitext
-from ...opener import open_fs
-
 from six.moves.socketserver import ThreadingMixIn
 from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from six.moves.urllib.parse import quote, unquote
 
+from ... import errors
+from ...path import combine, forcedir, normpath, splitext
+from ...opener import open_fs
+
+from .__meta__ import *
 
 class PyfilesystemServerHandler(BaseHTTPRequestHandler, object):
     """Simple HTTP request handler with GET/HEAD/POST commands.
