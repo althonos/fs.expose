@@ -17,6 +17,7 @@ import fuse
 from ... import errors
 from ...enums import ResourceType, Seek
 from ...opener import open_fs
+from ...path import basename
 
 from .error_tools import convert_fs_errors
 
@@ -38,8 +39,6 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     def access(self, path, amode):
         return 0
-
-    bmap = None
 
     @convert_fs_errors
     def chmod(self, path, mode):
@@ -72,7 +71,7 @@ class PyfilesystemFuseOperations(fuse.Operations):
     def fsyncdir(self, path, datasync, fd):
         return 0
 
-    # @convert_fs_errors
+    @convert_fs_errors
     def getattr(self, path, fh=None):
 
         try:
@@ -193,14 +192,16 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def truncate(self, path, length, fd=None):
+        name = basename(path)
         if fd is None:
             fd = self.open(path, stat.S_IWRITE)
-        fh = self.descriptors[fd]
+        fh = self.descriptors.get(fd)
+        if fh is None or getattr(fh, 'name', name) != name:
+            raise fuse.FuseOSError(errno.EBADF)
         if fh.writable():
             fh.truncate(length)
         else:
             raise fuse.FuseOSError(errno.EROFS)
-
 
     @convert_fs_errors
     def unlink(self, path):
