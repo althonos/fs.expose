@@ -28,7 +28,7 @@ from ... import errors
 from ...path import normpath
 from ...opener import open_fs
 
-class RPCFSInterface:
+class RPCFSInterface(object):
     """Wrapper to expose an FS via a XML-RPC compatible interface.
 
     The only real trick is using xmlrpclib.Binary objects to transport
