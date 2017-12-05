@@ -1,6 +1,8 @@
-sudo: false
+# sudo: false
 language: python
 cache: pip
+sudo: required
+dist: trusty
 
 python:
 - '2.7'
@@ -17,6 +19,7 @@ matrix:
   - python: pypy-5.3.1
 
 before_install:
+- sudo chown root:$USER /etc/fuse.conf
 - pip install -U setuptools wheel
 
 install:
