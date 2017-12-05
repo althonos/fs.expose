@@ -90,14 +90,20 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
         if info.has_namespace('details'):
         # FIXME: some namespaces could be unavailable
-            result['st_atime'] = int(info.accessed.timestamp())
-            result['st_mtime'] = int(info.modified.timestamp())
-            result['st_ctime'] = int((info.created or info.metadata_changed).timestamp())
-            result['st_size'] = info.size
+            if info.accessed is not None:
+                result['st_atime'] = int(info.accessed.timestamp())
+            if info.modified is not None:
+                result['st_mtime'] = int(info.modified.timestamp())
+            if (info.created or info.metadata_changed) is not None:
+                result['st_ctime'] = int((info.created or info.metadata_changed).timestamp())
+            if info.size is not None:
+                result['st_size'] = info.size
 
         if info.has_namespace('access'):
-            result['st_uid'] = info.uid
-            result['st_gid'] = info.gid
+            if info.uid is not None:
+                result['st_uid'] = info.uid
+            if info.gid is not None:
+                result['st_gid'] = info.gid
 
         # TODO: support links ?
         # if info.is_link:
@@ -137,7 +143,7 @@ class PyfilesystemFuseOperations(fuse.Operations):
     @convert_fs_errors
     def open(self, path, flags):
         # FIXME: mode should be determined from file ?
-        mode = 'r+'
+        mode = 'r' if self.fs.getmeta().get('read_only', True) else 'r+'
         fd = self._getfd()
         self.descriptors[fd] = self.fs.openbin(path, mode)
         return fd
@@ -189,7 +195,12 @@ class PyfilesystemFuseOperations(fuse.Operations):
     def truncate(self, path, length, fd=None):
         if fd is None:
             fd = self.open(path, stat.S_IWRITE)
-        self.descriptors[fd].truncate(length)
+        fh = self.descriptors[fd]
+        if fh.writable():
+            fh.truncate(length)
+        else:
+            raise fuse.FuseOSError(errno.EROFS)
+
 
     @convert_fs_errors
     def unlink(self, path):
@@ -206,4 +217,7 @@ class PyfilesystemFuseOperations(fuse.Operations):
     def write(self, path, data, offset, fd):
         fh = self.descriptors[fd]
         fh.seek(offset, Seek.set)
-        return fh.write(data)
+        if fh.writable():
+            return fh.write(data)
+        else:
+            raise fuse.FuseOSError(errno.EROFS)
