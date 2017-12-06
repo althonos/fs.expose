@@ -13,6 +13,10 @@ import six
 
 from ... import errors
 
+# Fix missing codes in old Python versions
+errno.ENOTSUP = 95
+
+
 
 class _ConvertFSErrors(object):
     """Context manager and decorator to convert FSErrors in to FuseOSErrors.

@@ -50,7 +50,6 @@ class _TestFuseMount(FSTestCases):
         with open("/etc/mtab") as f:
             self.assertIn(self.mountpoint, f.read())
 
-# @unittest.skipIf(True, "")
 class TestFuseMemFS(_TestFuseMount, unittest.TestCase):
     _source_url = "mem://"
 
