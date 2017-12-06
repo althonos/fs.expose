@@ -1,5 +1,5 @@
-fs.expose
-=========
+``fs.expose``
+=============
 
 |Source| |PyPI| |Travis| |Codecov| |Codacy| |Format| |License|
 
@@ -32,7 +32,7 @@ Expose Pyfilesystem2 objects on several interfaces.
 
 
 Credits
-=======
+-------
 * `merlink <https://github.com/merlink01>`_ -- port of the Dokan and HTTP code
   to Pyfilesystem2
 * `Liryna <https://github.com/Liryna>`_ -- original Dokan PyFilesystem module
