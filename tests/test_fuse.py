@@ -109,3 +109,23 @@ class TestAtomicOperations(unittest.TestCase):
         with self.assertRaises(OSError) as ctx:
             self.ops('truncate', 'dir', 0)
         self.assertEqual(ctx.exception.errno, errno.EISDIR)
+
+    def test_unlink(self):
+        self.fs.create('file.txt')
+        # Normal behaviour
+        self.ops('unlink', 'file.txt')
+        self.assertFalse(self.fs.exists('file.txt'))
+        # Error when the target does not exist
+        with self.assertRaises(OSError) as handler:
+            self.ops('unlink', 'file.txt')
+        self.assertEqual(handler.exception.errno, errno.ENOENT)
+        # Error when trying to unlink a directory
+        self.fs.makedir('test')
+        with self.assertRaises(OSError) as handler:
+            self.ops('unlink', 'test')
+        self.assertEqual(handler.exception.errno, errno.EISDIR)
+        # Error when one of the directory path is not a directory
+        # self.fs.create('abc')
+        # with self.assertRaises(OSError) as handler:
+        #     self.ops('unlink', 'abc/def')
+        # self.assertEqual(handler.exception.errno, errno.ENOTDIR)
