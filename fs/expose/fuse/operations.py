@@ -88,7 +88,6 @@ class PyfilesystemFuseOperations(fuse.Operations):
         os.umask(umask)
 
         if info.has_namespace('details'):
-        # FIXME: some namespaces could be unavailable
             if info.accessed is not None:
                 result['st_atime'] = int(timestamp(info.accessed))
             if info.modified is not None:

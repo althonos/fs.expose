@@ -6,8 +6,9 @@ import textwrap
 import threading
 import unittest
 
-import six
 import fs
+import six
+import tenacity
 
 from contextlib import closing
 
@@ -43,6 +44,12 @@ class TestExposeHTTP(unittest.TestCase):
     host = 'localhost'
     port = 8080
 
+    retry = tenacity.retry(
+        stop=tenacity.stop_after_attempt(4),
+        wait=tenacity.wait_fixed(1),
+        reraise=True,
+    )
+
     @classmethod
     def _url(cls, resource):
         safe_resource = quote(resource.encode('utf-8'))
@@ -69,21 +76,25 @@ class TestExposeHTTP(unittest.TestCase):
         cls.server_thread.join()
         cls.test_fs.close()
 
+    @retry
     def test_get_file(self):
         with closing(urlopen(self._url('root.txt'))) as res:
             self.assertEqual(res.read(), b'Hello, World!')
         with closing(urlopen(self._url('top/file.bin'))) as res:
             self.assertEqual(res.read(), b'Hi there!')
 
+    @retry
     def test_get_file_unicode(self):
         with closing(urlopen(self._url('top/middle/bottom/☻.txt'))) as res:
             self.assertEqual(res.read(), b'Happy face !')
 
+    @retry
     def test_get_file_not_found(self):
         with self.assertRaises(HTTPError) as err:
             urlopen(self._url('not-found.txt'))
         self.assertEqual(err.exception.code, 404)
 
+    @retry
     def test_list_directory(self):
         with closing(urlopen(self._url('top'))) as res:
             text = res.read()
@@ -103,6 +114,7 @@ class TestExposeHTTP(unittest.TestCase):
                 text = res.read()
                 self.assertIn(b'<a href="middle/">middle@</a>', text)
 
+    @retry
     def test_upload(self):
         self.assertFalse(self.test_fs.exists('top/middle/upload.txt'))
         data = textwrap.dedent("""
@@ -125,6 +137,7 @@ class TestExposeHTTP(unittest.TestCase):
         self.assertTrue(self.test_fs.exists('top/middle/upload.txt'))
         self.assertEqual(self.test_fs.gettext('top/middle/upload.txt'), 'This is an upload test.\n')
 
+    @retry
     def test_head_request(self):
         request = Request(self._url('root.txt'))
         request.get_method = lambda : 'HEAD'
@@ -132,12 +145,14 @@ class TestExposeHTTP(unittest.TestCase):
             self.assertEqual(res.headers['Content-type'], 'text/plain')
             self.assertEqual(int(res.headers['Content-Length']), len(b'Hello, World!'))
 
+    @retry
     def test_mime_type(self):
         request = Request(self._url('video.mp4'))
         request.get_method = lambda : 'HEAD'
         with closing(urlopen(request)) as res:
             self.assertEqual(res.headers['Content-type'], 'video/mp4')
 
+    @retry
     def test_permission_denied(self):
         with mock.patch.object(self.test_fs, 'listdir', mock.MagicMock()) as mock_method:
             mock_method.side_effect = PermissionDenied
@@ -145,6 +160,7 @@ class TestExposeHTTP(unittest.TestCase):
                 urlopen(self._url('/'))
             self.assertEqual(err.exception.code, 403)
 
+    @retry
     def test_upload_no_boundary(self):
         with self.assertRaises(HTTPError) as handler:
             data = b""
@@ -159,6 +175,7 @@ class TestExposeHTTP(unittest.TestCase):
             "'Content-Type' header does not contain a boundary"
         )
 
+    @retry
     def test_upload_wrong_data(self):
         with self.assertRaises(HTTPError) as handler:
             data = b"\n"
@@ -172,6 +189,7 @@ class TestExposeHTTP(unittest.TestCase):
             handler.exception.reason,
         )
 
+    @retry
     def test_upload_no_filename(self):
         with self.assertRaises(HTTPError) as handler:
             data = b"--DATA\n"
@@ -185,6 +203,7 @@ class TestExposeHTTP(unittest.TestCase):
             handler.exception.reason,
         )
 
+    @retry
     def test_upload_directory(self):
         with self.assertRaises(HTTPError) as handler:
             data = textwrap.dedent("""
@@ -203,6 +222,7 @@ class TestExposeHTTP(unittest.TestCase):
             handler.exception.reason,
         )
 
+    @retry
     def test_upload_unexpected_end_of_data(self):
         with self.assertRaises(HTTPError) as handler:
             data = textwrap.dedent("""
