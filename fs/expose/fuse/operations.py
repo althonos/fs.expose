@@ -19,7 +19,7 @@ from ...enums import ResourceType, Seek
 from ...opener import open_fs
 from ...path import basename
 
-from .error_tools import convert_fs_errors
+from .utils import convert_fs_errors, timestamp
 
 
 class PyfilesystemFuseOperations(fuse.Operations):
@@ -90,11 +90,11 @@ class PyfilesystemFuseOperations(fuse.Operations):
         if info.has_namespace('details'):
         # FIXME: some namespaces could be unavailable
             if info.accessed is not None:
-                result['st_atime'] = int(info.accessed.timestamp())
+                result['st_atime'] = int(timestamp(info.accessed))
             if info.modified is not None:
-                result['st_mtime'] = int(info.modified.timestamp())
+                result['st_mtime'] = int(timestamp(info.modified))
             if (info.created or info.metadata_changed) is not None:
-                result['st_ctime'] = int((info.created or info.metadata_changed).timestamp())
+                result['st_ctime'] = int(timestamp(info.created or info.metadata_changed))
             if info.size is not None:
                 result['st_size'] = info.size
 
@@ -192,11 +192,10 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def truncate(self, path, length, fd=None):
-        name = basename(path)
         if fd is None:
             fd = self.open(path, stat.S_IWRITE)
         fh = self.descriptors.get(fd)
-        if fh is None or getattr(fh, 'name', name) != name:
+        if fh is None:
             raise fuse.FuseOSError(errno.EBADF)
         if fh.writable():
             fh.truncate(length)

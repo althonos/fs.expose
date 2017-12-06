@@ -2,8 +2,11 @@
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
-import functools
+import datetime
 import errno
+import functools
+import operator
+import sys
 
 import fuse
 import six
@@ -81,3 +84,9 @@ class _ConvertFSErrors(object):
 
 # Stops linter complaining about invalid class name
 convert_fs_errors = _ConvertFSErrors()
+
+if sys.version_info < (3, 3):
+    def timestamp(dt):
+        return (dt - datetime.datetime.fromtimestamp(0, dt.tzinfo)).total_seconds()
+else:
+    timestamp = operator.methodcaller('timestamp')
