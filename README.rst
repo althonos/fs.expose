@@ -1,9 +1,9 @@
 fs.expose
 =========
 
-|Source| |PyPI| |Travis| |Codecov| |Format| |License|
+|Source| |PyPI| |Travis| |Codecov| |Codacy| |Format| |License|
 
-.. .. |Codacy| image:: https://img.shields.io/codacy/grade/9734bea6ec004cc4914a377d9e9f54bd/master.svg?style=flat-square&maxAge=300
+.. |Codacy| image:: https://img.shields.io/codacy/grade/d896dc4c0f8f4d4ba4e73022c9310e1e/master.svg?style=flat-square&maxAge=300
    :target: https://www.codacy.com/app/althonos/fs.expose/dashboard
 
 .. |Travis| image:: https://img.shields.io/travis/althonos/fs.expose/master.svg?style=flat-square&maxAge=300
