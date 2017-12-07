@@ -140,16 +140,28 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def open(self, path, flags):
-        # FIXME: mode should be determined from file ?
-        mode = 'r' if self.fs.getmeta().get('read_only', True) else 'r+'
+
+        # if write only -> check if appending or not
+        if (flags & posix.O_ACCMODE) == posix.O_WRONLY:
+            mode = 'a' if (flags & posix.O_APPEND) else 'w'
+        # if read/write -> check if truncating or not
+        elif (flags & posix.O_ACCMODE) == posix.O_RDWR:
+            mode = 'w+' if (flags & (posix.O_TRUNC)) else 'r+'
+        # if read-only -> check if actually writing (stat flags or truncating)
+        elif (flags & posix.O_ACCMODE) == posix.O_RDONLY:
+            mode = 'r+' if (flags & (posix.ST_WRITE | posix.O_TRUNC)) else 'r'
+
         fd = self._getfd()
         self.descriptors[fd] = self.fs.openbin(path, mode)
         return fd
 
+    @convert_fs_errors
     def read(self, path, size, offset, fd):
         handle = self.descriptors.get(fd)
         if handle is None:
             raise fuse.FuseOSError(errno.EBADF)
+        if not handle.readable():
+            raise fuse.FuseOSError(errno.EINVAL)
         handle.seek(offset, Seek.set)
         return handle.read(size)
 
@@ -162,8 +174,11 @@ class PyfilesystemFuseOperations(fuse.Operations):
         raise fuse.FuseOSError(errno.ENOENT)
 
     @convert_fs_errors
-    def release(self, path, fh):
-        self.descriptors[fh].close()
+    def release(self, path, fd):
+        fh = self.descriptors.pop(fd, None)
+        if fh is None:
+            raise fuse.FuseOSError(errno.EBADF)
+        fh.close()
 
     @convert_fs_errors
     def removexattr(self, path, name):
@@ -191,15 +206,23 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def truncate(self, path, length, fd=None):
-        if fd is None:
-            fd = self.open(path, stat.S_IWRITE)
-        fh = self.descriptors.get(fd)
+
+        print("FD:", fd)
+
+        _fd = fd or self.open(path, posix.O_RDWR)
+        fh = self.descriptors.get(_fd)
+
         if fh is None:
             raise fuse.FuseOSError(errno.EBADF)
-        if fh.writable():
+
+        try:
+            if not fh.writable():
+                raise fuse.FuseOSError(errno.EROFS)
+            fh.seek(0)
             fh.truncate(length)
-        else:
-            raise fuse.FuseOSError(errno.EROFS)
+        finally:
+            if fd is None:
+                self.release(path, _fd)
 
     @convert_fs_errors
     def unlink(self, path):

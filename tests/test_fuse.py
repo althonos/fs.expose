@@ -90,7 +90,7 @@ class TestAtomicOperations(unittest.TestCase):
         self.ops('truncate', 'file.txt', 5)
         self.assertEqual(self.fs.gettext('file.txt'), 'Hello')
         # Normal behaviour on open file
-        fd = self.ops.open('file.txt', 0)
+        fd = self.ops.open('file.txt', posix.O_RDWR)
         self.ops('truncate', 'file.txt', 2, fd)
         self.assertEqual(self.fs.gettext('file.txt'), 'He')
         # Normal behaviour when extending file
@@ -147,3 +147,13 @@ class TestAtomicOperations(unittest.TestCase):
         with self.assertRaises(OSError) as handler:
             self.ops('read', 'file.txt', 10, 0, fd+1)
         self.assertEqual(handler.exception.errno, errno.EBADF)
+        # Error on not readable
+        fd = self.ops('open', 'file.txt', posix.O_WRONLY)
+        with self.assertRaises(OSError) as handler:
+            self.ops('read', 'file.txt', 10, 0, fd)
+        self.assertEqual(handler.exception.errno, errno.EINVAL)
+
+    def test_close(self):
+        self.fs.create('file.txt')
+        # Normal behaviour
+        fd = self.ops('open', 'file.txt', posix.O_RDONLY)
