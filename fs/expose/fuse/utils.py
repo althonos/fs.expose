@@ -17,6 +17,7 @@ from ... import errors
 # Fix missing constants in old Python versions
 errno.ENOTSUP = 95
 posix.O_ACCMODE = 3
+posix.ST_WRITE = 128
 
 
 class _ConvertFSErrors(object):
