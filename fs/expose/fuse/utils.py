@@ -26,6 +26,8 @@ class _ConvertFSErrors(object):
 
     FILE_ERRORS = {
 
+        KeyError: errno.EBADF,
+
         # errors.CreateFailed:,
         # errors.FilesystemClosed:,
         # errors.OperationFailed:,
@@ -42,6 +44,7 @@ class _ConvertFSErrors(object):
         # errors.NoURL:,
         # errors.ResourceError:,
         errors.DestinationExists: errno.EEXIST,
+        errors.DirectoryExists: errno.EEXIST,
         errors.DirectoryNotEmpty: errno.ENOTEMPTY,
         errors.FileExists: errno.EEXIST,
         # errors.ResourceInvalid:,
@@ -77,7 +80,7 @@ class _ConvertFSErrors(object):
         # if exc_type is not None:
         #     raise exc_value if exc_value else exc_type
         if exc_type is not None:
-            if isinstance(exc_value, errors.FSError):
+            if isinstance(exc_value, (errors.FSError, KeyError)):
                 six.reraise(
                     fuse.FuseOSError,
                     fuse.FuseOSError(self.FILE_ERRORS.get(exc_type)),

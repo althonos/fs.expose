@@ -82,6 +82,11 @@ class TestAtomicOperations(unittest.TestCase):
         self.fs = fs.open_fs('mem://')
         self.ops = PyfilesystemFuseOperations(self.fs)
 
+    def test_close(self):
+        self.fs.create('file.txt')
+        # Normal behaviour
+        fd = self.ops('open', 'file.txt', posix.O_RDONLY)
+
     def test_create(self):
         self.assertFalse(self.fs.exists('file.txt'))
         # Normal behaviour
@@ -99,6 +104,166 @@ class TestAtomicOperations(unittest.TestCase):
         with self.assertRaises(OSError) as ctx:
             self.ops('create', 'dir', 0)
         self.assertEqual(ctx.exception.errno, errno.EISDIR)
+
+    def test_makedir(self):
+        # Normal behaviour
+        self.assertFalse(self.fs.isdir('test'))
+        self.ops('mkdir', 'test', None)
+        self.assertTrue(self.fs.isdir('test'))
+        # Error when given an existing path
+        with self.assertRaises(OSError) as handler:
+            self.ops('mkdir', 'test', None)
+        self.assertEqual(handler.exception.errno, errno.EEXIST)
+        # Error when invalid path
+        with self.assertRaises(OSError) as handler:
+            self.ops('mkdir', 'test\0', None)
+        self.assertEqual(handler.exception.errno, errno.EINVAL)
+        # Error when a component does not exist
+        with self.assertRaises(OSError) as handler:
+            self.ops('mkdir', 'parent/test', None)
+        self.assertEqual(handler.exception.errno, errno.ENOENT)
+        # Error when read-only
+        self.ops.fs = read_only(self.ops.fs)
+        with self.assertRaises(OSError) as handler:
+            self.ops('mkdir', 'parent/test', None)
+        self.assertEqual(handler.exception.errno, errno.EROFS)
+        # Error when a component is not a file
+        # FIXME: must fix MemoryFS to raise the right error
+        #        and not an AssertionError
+        # self.fs.touch('abc.txt')
+        # with self.assertRaises(OSError) as handler:
+        #     self.ops('mkdir', 'abc.txt/test', None)
+        # self.assertEqual(handler.exception.errno, errno.ENOTDIR)
+
+    def test_read(self):
+        self.fs.settext('file.txt', 'Hello, World!')
+        # Normal behaviour
+        fd = self.ops('open', 'file.txt', posix.O_RDONLY)
+        self.assertEqual(self.ops('read', 'file.txt', 100, 0, fd), b'Hello, World!')
+        self.assertEqual(self.ops('read', 'file.txt', 10, 0, fd), b'Hello, Wor')
+        self.assertEqual(self.ops('read', 'file.txt', 10, 3, fd), b'lo, World!')
+        # Error on bad file descriptor
+        with self.assertRaises(OSError) as handler:
+            self.ops('read', 'file.txt', 10, 0, fd+1)
+        self.assertEqual(handler.exception.errno, errno.EBADF)
+        # Error on not readable
+        fd = self.ops('open', 'file.txt', posix.O_WRONLY)
+        with self.assertRaises(OSError) as handler:
+            self.ops('read', 'file.txt', 10, 0, fd)
+        self.assertEqual(handler.exception.errno, errno.EINVAL)
+
+    def test_readdir(self):
+        # Normal behaviour
+        self.assertEqual(self.ops('readdir', '/', None), ['.', '..'])
+        self.fs.makedirs('top/middle/bottom')
+        self.fs.touch('root.txt')
+        self.fs.touch('top/file.bin')
+        self.assertEqual(
+            sorted(self.ops('readdir', '/', None)),
+            ['.', '..', 'root.txt', 'top']
+        )
+        self.assertEqual(
+            sorted(self.ops('readdir', 'top', None)),
+            ['.', '..', 'file.bin', 'middle']
+        )
+        self.assertEqual(
+            sorted(self.ops('readdir', 'top/middle/bottom', None)),
+            ['.', '..']
+        )
+        # Error when given path is not a directory
+        with self.assertRaises(OSError) as handler:
+            self.ops('readdir', 'root.txt', None)
+        self.assertEqual(handler.exception.errno, errno.ENOTDIR)
+        # Error on non-existing path
+        with self.assertRaises(OSError) as handler:
+            self.ops('readdir', 'foo/bar', None)
+        self.assertEqual(handler.exception.errno, errno.ENOENT)
+
+    def test_release(self):
+        self.fs.touch('test.txt')
+        fd = self.ops.open('test.txt', posix.O_RDWR)
+        self.assertIn(fd, self.ops.descriptors)
+        fh = self.ops.descriptors[fd]
+        self.assertFalse(fh.closed)
+        self.ops('release', 'test.txt', fd)
+        self.assertNotIn(fd, self.ops.descriptors)
+        self.assertTrue(fh.closed)
+        with self.assertRaises(OSError) as handler:
+            self.ops('release', 'test.txt', fd)
+        self.assertEqual(handler.exception.errno, errno.EBADF)
+
+    def test_rename_file(self):
+        # Normal behaviour
+        self.fs.settext('abc.txt', 'ABC')
+        self.assertFalse(self.fs.exists('file.txt'))
+        self.ops('rename', 'abc.txt', 'file.txt')
+        self.assertFalse(self.fs.exists('abc.txt'))
+        self.assertTrue(self.fs.exists('file.txt'))
+        self.assertEqual(self.fs.gettext('file.txt'), 'ABC')
+        # Error on non existing old path
+        with self.assertRaises(OSError) as handler:
+            self.ops('rename', 'foo', 'bar')
+        self.assertEqual(handler.exception.errno, errno.ENOENT)
+        # Error on empty source or destination
+        with self.assertRaises(OSError) as handler:
+            self.ops('rename', '', 'bar')
+        self.assertEqual(handler.exception.errno, errno.ENOENT)
+        # Error on bad component in file name
+        with self.assertRaises(OSError) as handler:
+            self.ops('rename', 'file.txt/foo', 'bar')
+        self.assertEqual(handler.exception.errno, errno.ENOTDIR)
+
+    def test_rename_directory(self):
+        # Normal behaviour
+        self.fs.makedir('a')
+        self.fs.settext('a/abc.txt', 'ABC')
+        self.fs.settext('a/def.txt', 'DEF')
+        self.fs.makedir('b')
+        self.ops('rename', 'a', 'b')
+        self.assertFalse(self.fs.exists('a'))
+        self.assertTrue(self.fs.exists('b'))
+        self.assertEqual(sorted(self.fs.listdir('b')), ['abc.txt', 'def.txt'])
+        # Error when moving a file to a directory
+        self.fs.makedir('c')
+        with self.assertRaises(OSError) as handler:
+            self.ops('rename', 'b/abc.txt', 'c')
+        self.assertEqual(handler.exception.errno, errno.EISDIR)
+        # Error when moving a directory inside itself
+        self.fs.makedir('b/b2')
+        with self.assertRaises(OSError) as handler:
+            self.ops('rename', 'b', 'b/b2')
+        self.assertEqual(handler.exception.errno, errno.EINVAL)
+        # Error when moving a directory to a non-empty directory
+        self.fs.touch('c/bar')
+        with self.assertRaises(OSError) as handler:
+            self.ops('rename', 'b', 'c')
+        self.assertEqual(handler.exception.errno, errno.ENOTEMPTY)
+
+    def test_rmdir(self):
+        # Normal behaviour
+        self.fs.makedir('a')
+        self.assertTrue(self.fs.exists('a') and self.fs.isdir('a'))
+        self.ops('rmdir', 'a')
+        self.assertFalse(self.fs.exists('a'))
+        # Error when removing a non empty directory
+        self.fs.makedir('a')
+        self.fs.touch('a/b')
+        with self.assertRaises(OSError) as handler:
+            self.ops('rmdir', 'a')
+        self.assertEqual(handler.exception.errno, errno.ENOTEMPTY)
+        # Error when removing an non-existing directory
+        with self.assertRaises(OSError) as handler:
+            self.ops('rmdir', 'c')
+        self.assertEqual(handler.exception.errno, errno.ENOENT)
+        # Error when removing a file
+        with self.assertRaises(OSError) as handler:
+            self.ops('rmdir', 'a/b')
+        self.assertEqual(handler.exception.errno, errno.ENOTDIR)
+        # Error on a bad component in the path
+        self.fs.touch('file.txt')
+        with self.assertRaises(OSError) as handler:
+            self.ops('rmdir', 'a/b/c')
+        self.assertEqual(handler.exception.errno, errno.ENOTDIR)
 
     def test_truncate(self):
         # Normal behaviour
@@ -152,24 +317,19 @@ class TestAtomicOperations(unittest.TestCase):
             self.ops('unlink', 'create')
         self.assertEqual(handler.exception.errno, errno.EROFS)
 
-    def test_read(self):
-        self.fs.settext('file.txt', 'Hello, World!')
+    def test_write(self):
         # Normal behaviour
-        fd = self.ops('open', 'file.txt', posix.O_RDONLY)
-        self.assertEqual(self.ops('read', 'file.txt', 100, 0, fd), b'Hello, World!')
-        self.assertEqual(self.ops('read', 'file.txt', 10, 0, fd), b'Hello, Wor')
-        self.assertEqual(self.ops('read', 'file.txt', 10, 3, fd), b'lo, World!')
+        fd = self.ops.open('test.txt', posix.O_CREAT | posix.O_WRONLY)
+        self.ops.write('test.txt', b'Hello, ', 0, fd)
+        self.ops.write('test.txt', b'World!', 7, fd)
+        self.ops.release('test.txt', fd)
+        self.assertEqual(self.fs.getbytes('test.txt'), b'Hello, World!')
         # Error on bad file descriptor
-        with self.assertRaises(OSError) as handler:
-            self.ops('read', 'file.txt', 10, 0, fd+1)
-        self.assertEqual(handler.exception.errno, errno.EBADF)
-        # Error on not readable
-        fd = self.ops('open', 'file.txt', posix.O_WRONLY)
-        with self.assertRaises(OSError) as handler:
-            self.ops('read', 'file.txt', 10, 0, fd)
-        self.assertEqual(handler.exception.errno, errno.EINVAL)
-
-    def test_close(self):
-        self.fs.create('file.txt')
-        # Normal behaviour
-        fd = self.ops('open', 'file.txt', posix.O_RDONLY)
+        with self.assertRaises(OSError) as ctx:
+            self.ops('write', 'file.txt', b'', 0, fd+1)
+        self.assertEqual(ctx.exception.errno, errno.EBADF)
+        # Error when writing to a file that is not open for writing
+        fd = self.ops.open('test.txt', posix.O_RDONLY)
+        with self.assertRaises(OSError) as ctx:
+            self.ops('write', 'file.txt', b'', 0, fd)
+        self.assertEqual(ctx.exception.errno, errno.EINVAL)

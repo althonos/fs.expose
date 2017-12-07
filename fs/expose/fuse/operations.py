@@ -17,7 +17,7 @@ import fuse
 from ... import errors
 from ...enums import ResourceType, Seek
 from ...opener import open_fs
-from ...path import basename, recursepath
+from ...path import basename, isparent, recursepath
 
 from .utils import convert_fs_errors, timestamp
 
@@ -59,6 +59,7 @@ class PyfilesystemFuseOperations(fuse.Operations):
     def destroy(self, path):
         for handle in self.descriptors.values():
             handle.close()
+        self.descriptors.clear()
         self.fs.close()
 
     @convert_fs_errors
@@ -157,9 +158,7 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def read(self, path, size, offset, fd):
-        handle = self.descriptors.get(fd)
-        if handle is None:
-            raise fuse.FuseOSError(errno.EBADF)
+        handle = self.descriptors[fd]
         if not handle.readable():
             raise fuse.FuseOSError(errno.EINVAL)
         handle.seek(offset, Seek.set)
@@ -175,10 +174,7 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def release(self, path, fd):
-        fh = self.descriptors.pop(fd, None)
-        if fh is None:
-            raise fuse.FuseOSError(errno.EBADF)
-        fh.close()
+        self.descriptors.pop(fd).close()
 
     @convert_fs_errors
     def removexattr(self, path, name):
@@ -186,13 +182,34 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def rename(self, old, new):
+        _old = self.fs.validatepath(old)
+        _new = self.fs.validatepath(new)
+
+        if _old in '/' or _new in '/':
+            raise fuse.FuseOSError(errno.ENOENT)
+        elif isparent(_old, _new):
+            raise fuse.FuseOSError(errno.EINVAL)
+
+        for component in recursepath(_old)[:-1]:
+            if not self.fs.isdir(component):
+                raise fuse.FuseOSError(errno.ENOTDIR)
+
         if self.fs.gettype(old) is ResourceType.directory:
+            if not self.fs.exists(new):
+                self.fs.makedir(new)
+            if not self.fs.isempty(new):
+                raise fuse.FuseOSError(errno.ENOTEMPTY)
             self.fs.movedir(old, new)
         else:
+            if self.fs.isdir(new):
+                raise fuse.FuseOSError(errno.EISDIR)
             self.fs.move(old, new)
 
     @convert_fs_errors
     def rmdir(self, path):
+        for component in recursepath(path)[:-1]:
+            if not self.fs.isdir(component):
+                raise fuse.FuseOSError(errno.ENOTDIR)
         self.fs.removedir(path)
 
     def setxattr(self, path, name, value, options, position=0):
@@ -206,15 +223,8 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def truncate(self, path, length, fd=None):
-
-        print("FD:", fd)
-
         _fd = fd or self.open(path, posix.O_RDWR)
-        fh = self.descriptors.get(_fd)
-
-        if fh is None:
-            raise fuse.FuseOSError(errno.EBADF)
-
+        fh = self.descriptors[_fd]
         try:
             if not fh.writable():
                 raise fuse.FuseOSError(errno.EROFS)
@@ -245,4 +255,4 @@ class PyfilesystemFuseOperations(fuse.Operations):
         if fh.writable():
             return fh.write(data)
         else:
-            raise fuse.FuseOSError(errno.EROFS)
+            raise fuse.FuseOSError(errno.EINVAL)
