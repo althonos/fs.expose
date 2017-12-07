@@ -4,6 +4,7 @@ from __future__ import unicode_literals
 
 import datetime
 import errno
+import posix
 import functools
 import operator
 import sys
@@ -13,9 +14,9 @@ import six
 
 from ... import errors
 
-# Fix missing codes in old Python versions
+# Fix missing constants in old Python versions
 errno.ENOTSUP = 95
-
+posix.O_ACCMODE = 3
 
 
 class _ConvertFSErrors(object):
