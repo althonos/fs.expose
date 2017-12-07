@@ -25,6 +25,23 @@ class _TestFuseMount(FSTestCases):
 
     _source_url = NotImplemented
 
+    @staticmethod
+    def _is_mounted(mountpoint):
+        with open('/etc/mtab') as f:
+            for line in f:
+                if mountpoint == line.split(" ")[1]:
+                    return True
+        return False
+
+    def _mount(self, timeout=1, sleeptime=0.001):
+        self.fuse_process.start()
+        while not self._is_mounted(self.mountpoint) and timeout:
+            timeout -= sleeptime
+            time.sleep(sleeptime)
+        if not timeout:
+            self.fail('could not mount {} to {}'.format(
+                self.source_fs, self.mountpoint))
+
     def make_fs(self):
         self.mountpoint = tempfile.mkdtemp()
         self.source_fs = fs.open_fs(self._source_url)
@@ -33,8 +50,7 @@ class _TestFuseMount(FSTestCases):
             args=(PyfilesystemFuseOperations(self.source_fs), self.mountpoint),
             kwargs={"foreground": True, "debug": False},
         )
-        self.fuse_process.start()
-        time.sleep(0.1)
+        self._mount()
         test_fs = fs.open_fs(self.mountpoint)
         self.assertTrue(test_fs.isempty('/'))
         return test_fs
