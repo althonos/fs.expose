@@ -17,7 +17,7 @@ import fuse
 from ... import errors
 from ...enums import ResourceType, Seek
 from ...opener import open_fs
-from ...path import basename
+from ...path import basename, recursepath
 
 from .utils import convert_fs_errors, timestamp
 
@@ -65,11 +65,11 @@ class PyfilesystemFuseOperations(fuse.Operations):
     def flush(self, path, fd):
         self.descriptors[fd].flush()
 
-    def fsync(self, path, datasync, fd):
-        return 0
-
-    def fsyncdir(self, path, datasync, fd):
-        return 0
+    # def fsync(self, path, datasync, fd):
+    #     return 0
+    #
+    # def fsyncdir(self, path, datasync, fd):
+    #     return 0
 
     @convert_fs_errors
     def getattr(self, path, fh=None):
@@ -146,10 +146,10 @@ class PyfilesystemFuseOperations(fuse.Operations):
         self.descriptors[fd] = self.fs.openbin(path, mode)
         return fd
 
-    @convert_fs_errors
     def read(self, path, size, offset, fd):
-        print(path, size, offset, fd)
-        handle = self.descriptors[fd]
+        handle = self.descriptors.get(fd)
+        if handle is None:
+            raise fuse.FuseOSError(errno.EBADF)
         handle.seek(offset, Seek.set)
         return handle.read(size)
 
@@ -203,6 +203,9 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def unlink(self, path):
+        for component in recursepath(path)[:-1]:
+            if not self.fs.isdir(component):
+                raise fuse.FuseOSError(errno.ENOTDIR)
         self.fs.remove(path)
 
     @convert_fs_errors

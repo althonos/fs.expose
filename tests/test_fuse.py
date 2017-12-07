@@ -17,6 +17,7 @@ import fuse
 import six
 
 from fs.test import FSTestCases
+from fs.wrap import read_only
 from fs.expose.fuse.operations import PyfilesystemFuseOperations
 
 
@@ -124,8 +125,25 @@ class TestAtomicOperations(unittest.TestCase):
         with self.assertRaises(OSError) as handler:
             self.ops('unlink', 'test')
         self.assertEqual(handler.exception.errno, errno.EISDIR)
-        # Error when one of the directory path is not a directory
-        # self.fs.create('abc')
-        # with self.assertRaises(OSError) as handler:
-        #     self.ops('unlink', 'abc/def')
-        # self.assertEqual(handler.exception.errno, errno.ENOTDIR)
+        # Error when one of the components in the path is not a directory
+        self.fs.create('abc')
+        with self.assertRaises(OSError) as handler:
+            self.ops('unlink', 'abc/def')
+        self.assertEqual(handler.exception.errno, errno.ENOTDIR)
+        # Error when the filesystem is read-only
+        self.ops.fs = read_only(self.fs)
+        with self.assertRaises(OSError) as handler:
+            self.ops('unlink', 'create')
+        self.assertEqual(handler.exception.errno, errno.EROFS)
+
+    def test_read(self):
+        self.fs.settext('file.txt', 'Hello, World!')
+        # Normal behaviour
+        fd = self.ops('open', 'file.txt', posix.O_RDONLY)
+        self.assertEqual(self.ops('read', 'file.txt', 100, 0, fd), b'Hello, World!')
+        self.assertEqual(self.ops('read', 'file.txt', 10, 0, fd), b'Hello, Wor')
+        self.assertEqual(self.ops('read', 'file.txt', 10, 3, fd), b'lo, World!')
+        # Error on bad file descriptor
+        with self.assertRaises(OSError) as handler:
+            self.ops('read', 'file.txt', 10, 0, fd+1)
+        self.assertEqual(handler.exception.errno, errno.EBADF)
