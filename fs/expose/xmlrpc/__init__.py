@@ -7,7 +7,7 @@ import threading
 from .xmlrpc import RPCFSServer
 # ~ from six.moves.xmlrpc_server import SimpleXMLRPCRequestHandler
 
-def serve(filesystem, host='127.0.0.1', port=8000, debug=True):
+def serve(filesystem, host='127.0.0.1', port=8000, encoding='utf-8',debug=True):
         xmlrpcserver = RPCFSServer(filesystem,(host,port))
 
         server_thread = threading.Thread(target=xmlrpcserver.serve_forever)
