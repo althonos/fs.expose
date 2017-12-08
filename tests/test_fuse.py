@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
+import datetime
 import errno
 import functools
 import os
@@ -9,6 +10,7 @@ import posix
 import textwrap
 import tempfile
 import multiprocessing
+import stat
 import time
 import unittest
 
@@ -16,9 +18,12 @@ import fs
 import fuse
 import six
 
+from fs.info import Info
 from fs.test import FSTestCases
 from fs.wrap import read_only
+from fs.enums import ResourceType
 from fs.expose.fuse.operations import PyfilesystemFuseOperations
+from fs.expose.fuse.utils import timestamp
 
 
 class _TestFuseMount(FSTestCases):
@@ -105,6 +110,69 @@ class TestAtomicOperations(unittest.TestCase):
             self.ops('create', 'dir', 0)
         self.assertEqual(ctx.exception.errno, errno.EISDIR)
 
+    def test_destroy(self):
+        self.fs.create('test.txt')
+        fd = self.ops.open('test.txt', posix.O_RDONLY)
+        fh = self.ops.descriptors[fd]
+        self.assertFalse(fh.closed)
+        self.assertFalse(self.fs.isclosed())
+        self.ops.destroy('/')
+        self.assertTrue(self.fs.isclosed())
+        self.assertTrue(fh.closed)
+        self.assertNotIn(fd, self.ops.descriptors)
+
+    def test_getattr(self):
+
+        umask = os.umask(0)
+        os.umask(umask)
+
+        test_data = [
+            (
+                {'details': {'accessed': 0}},
+                {'st_atime': 0, 'st_mode': stat.S_IFREG}
+            ),
+            (
+                {'details': {'modified': 0}},
+                {'st_mtime': 0, 'st_mode': stat.S_IFREG}
+            ),
+            (
+                {'details': {'size': 100}},
+                {'st_size': 100, 'st_mode': stat.S_IFREG}
+            ),
+            (
+                {'details': {'created': 0, 'type': int(ResourceType.directory)}},
+                {'st_ctime': 0, 'st_mode': stat.S_IFDIR}
+            ),
+            (
+                {'access': {'uid': 0, 'gid': 0}},
+                {'st_uid': 0, 'st_gid': 0}
+            ),
+            (
+                {'stat': {'st_mode': 17407, 'st_ino': 2947, 'st_dev': 42}},
+                {'st_mode': 17407, 'st_ino': 2947, 'st_dev': 42}
+            ),
+            (
+                {'access': {'permissions': ['u_r', 'u_w']}},
+                {'st_mode': 0o600}
+            ),
+            (
+                {'details': {'type': ResourceType.directory}, 'access': {}},
+                {'st_mode': stat.S_IFDIR | 0o777 & ~umask},
+            ),
+            (
+                {'details': {'type': ResourceType.file}, 'access': {}},
+                {'st_mode': stat.S_IFREG | 0o666 & ~umask},
+            ),
+            (
+                {'basic': {'name': ''}},
+                {'st_nlink': 2}
+            )
+        ]
+
+        for i, statd in test_data:
+            statinfo = PyfilesystemFuseOperations._stat_from_info(Info(i))
+            self.assertEqual(statd, statinfo)
+
     def test_makedir(self):
         # Normal behaviour
         self.assertFalse(self.fs.isdir('test'))
@@ -159,15 +227,18 @@ class TestAtomicOperations(unittest.TestCase):
         self.fs.touch('root.txt')
         self.fs.touch('top/file.bin')
         self.assertEqual(
-            sorted(self.ops('readdir', '/', None)),
+            sorted(x[0] if isinstance(x, tuple) else x
+               for x in self.ops('readdir', '/', None)),
             ['.', '..', 'root.txt', 'top']
         )
         self.assertEqual(
-            sorted(self.ops('readdir', 'top', None)),
+            sorted(x[0] if isinstance(x, tuple) else x
+                   for x in self.ops('readdir', 'top', None)),
             ['.', '..', 'file.bin', 'middle']
         )
         self.assertEqual(
-            sorted(self.ops('readdir', 'top/middle/bottom', None)),
+            sorted(x[0] if isinstance(x, tuple) else x
+                   for x in self.ops('readdir', 'top/middle/bottom', None)),
             ['.', '..']
         )
         # Error when given path is not a directory
@@ -291,6 +362,11 @@ class TestAtomicOperations(unittest.TestCase):
         with self.assertRaises(OSError) as ctx:
             self.ops('truncate', 'dir', 0)
         self.assertEqual(ctx.exception.errno, errno.EISDIR)
+        # Error when truncating a file from a read-only descriptor
+        fd = self.ops.open('file.txt', posix.O_RDONLY)
+        with self.assertRaises(OSError) as ctx:
+            self.ops('truncate', 'file.txt', 0, fd)
+        self.assertEqual(ctx.exception.errno, errno.EINVAL)
 
     def test_unlink(self):
         self.fs.create('file.txt')
@@ -316,6 +392,18 @@ class TestAtomicOperations(unittest.TestCase):
         with self.assertRaises(OSError) as handler:
             self.ops('unlink', 'create')
         self.assertEqual(handler.exception.errno, errno.EROFS)
+
+    def test_utimens(self):
+        self.fs.create('file.txt')
+        # Normal behaviour
+        self.ops.utimens('file.txt', (0, 0))
+        info = self.fs.getdetails('file.txt')
+        self.assertEqual(timestamp(info.accessed), 0)
+        self.assertEqual(timestamp(info.modified), 0)
+        # Error on unknown file
+        with self.assertRaises(OSError) as handler:
+            self.ops.utimens('unknown.txt')
+        self.assertEqual(handler.exception.errno, errno.ENOENT)
 
     def test_write(self):
         # Normal behaviour

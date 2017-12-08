@@ -24,6 +24,54 @@ from .utils import convert_fs_errors, timestamp
 
 class PyfilesystemFuseOperations(fuse.Operations):
 
+    @staticmethod
+    def _stat_from_info(info):
+
+        if info.has_namespace('stat'):
+            return info.raw['stat']
+
+        result = {}
+        umask = os.umask(0)
+        os.umask(umask)
+
+        if info.has_namespace('details'):
+            if info.accessed is not None:
+                result['st_atime'] = int(timestamp(info.accessed))
+            if info.modified is not None:
+                result['st_mtime'] = int(timestamp(info.modified))
+            if (info.created or info.metadata_changed) is not None:
+                result['st_ctime'] = int(timestamp(info.created or info.metadata_changed))
+            if info.size is not None:
+                result['st_size'] = info.size
+            # TODO: support links ?
+            # if info.is_link:
+            #     result['st_mode'] = stat.S_IFLNK
+            if info.type is ResourceType.directory:
+                result['st_mode'] = stat.S_IFDIR
+            else:
+                result['st_mode'] = stat.S_IFREG
+
+
+        mode = result.get('st_mode', 0)
+
+        if info.has_namespace('access'):
+            if info.uid is not None:
+                result['st_uid'] = info.uid
+            if info.gid is not None:
+                result['st_gid'] = info.gid
+            if info.permissions is not None:
+                result['st_mode'] = mode | info.permissions.mode
+            elif info.has_namespace('details'):
+                if info.type is ResourceType.directory:
+                    result['st_mode'] = mode | 0o777 & ~umask
+                else:
+                    result['st_mode'] = mode | 0o666 & ~umask
+
+        if info.name is not None and info.name in '/':
+            result['st_nlink'] = 2
+
+        return result
+
     def __init__(self, filesystem):
         self.descriptors = {}
         self.fs = open_fs(filesystem)
@@ -66,71 +114,18 @@ class PyfilesystemFuseOperations(fuse.Operations):
     def flush(self, path, fd):
         self.descriptors[fd].flush()
 
-    # def fsync(self, path, datasync, fd):
-    #     return 0
-    #
-    # def fsyncdir(self, path, datasync, fd):
-    #     return 0
-
     @convert_fs_errors
     def getattr(self, path, fh=None):
-
-        try:
-            info = self.fs.getinfo(path, ['details', 'access', 'stat', 'link'])
-
-        except errors.ResourceNotFound:
-            raise fuse.FuseOSError(errno.ENOENT)
-
-        if info.has_namespace('stat'):
-            return info.raw['stat']
-
-        result = {}
-        umask = os.umask(0)
-        os.umask(umask)
-
-        if info.has_namespace('details'):
-            if info.accessed is not None:
-                result['st_atime'] = int(timestamp(info.accessed))
-            if info.modified is not None:
-                result['st_mtime'] = int(timestamp(info.modified))
-            if (info.created or info.metadata_changed) is not None:
-                result['st_ctime'] = int(timestamp(info.created or info.metadata_changed))
-            if info.size is not None:
-                result['st_size'] = info.size
-
-        if info.has_namespace('access'):
-            if info.uid is not None:
-                result['st_uid'] = info.uid
-            if info.gid is not None:
-                result['st_gid'] = info.gid
-
-        # TODO: support links ?
-        # if info.is_link:
-        #     result['st_mode'] = stat.S_IFLNK
-        if info.type is ResourceType.directory:
-            result['st_mode'] = stat.S_IFDIR
-        else:
-            result['st_mode'] = stat.S_IFREG
-
-        if info.has_namespace('access') and info.permissions is not None:
-            result['st_mode'] |= info.permissions.mode
-        elif info.type is ResourceType.directory:
-            result['st_mode'] |= 0o777 & ~umask
-        else:
-            result['st_mode'] |= 0o666 & ~umask
-
-        if path == '/':
-            result['st_nlink'] = 2
-
-        return result
+        info = self.fs.getinfo(path, ['details', 'access', 'stat', 'link'])
+        return self._stat_from_info(info)
 
     @convert_fs_errors
     def getxattr(self, path, name, position=0):
         raise fuse.FuseOSError(errno.ENOTSUP)
 
-    @convert_fs_errors
-    def init(self, path):
-        pass
+    # @convert_fs_errors
+    # def init(self, path):
+    #     pass
 
     def listxattr(self, path):
         return []
@@ -166,7 +161,12 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def readdir(self, path, fh):
-        return ['.', '..'] + self.fs.listdir(path)
+        return ['.', '..'] + [
+            (info.name, self._stat_from_info(info), 0)
+                for info in self.fs.scandir(
+                    path, ['basic', 'access', 'details', 'link', 'stat']
+                )
+        ]
 
     @convert_fs_errors
     def readlink(self, path):
@@ -227,7 +227,7 @@ class PyfilesystemFuseOperations(fuse.Operations):
         fh = self.descriptors[_fd]
         try:
             if not fh.writable():
-                raise fuse.FuseOSError(errno.EROFS)
+                raise fuse.FuseOSError(errno.EINVAL)
             fh.seek(0)
             fh.truncate(length)
         finally:
