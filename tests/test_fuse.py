@@ -103,6 +103,40 @@ class TestAtomicOperations(unittest.TestCase):
             self.ops('unknown')
         self.assertEqual(handler.exception.errno, errno.ENOSYS)
 
+    def test_chmod(self):
+        # Normal behaviour
+        # Cannot test because MemoryFS do not support chmod
+        # self.fs.create('file.txt')
+        # self.ops.chmod('file.txt', 0o700)
+        # self.assertEqual(
+        #     self.fs.getinfo('file.txt', ['access']).permissions.mode,
+        #     0o700
+        # )
+        # self.ops.chmod('file.txt', 0o600)
+        # self.assertEqual(
+        #     self.fs.getinfo('file.txt', ['access']).permissions.mode,
+        #     0o700
+        # )
+        # Error on non-existing path
+        with self.assertRaises(OSError) as ctx:
+            self.ops.chmod('unknown', 0)
+        self.assertEqual(ctx.exception.errno, errno.ENOENT)
+
+    def test_chown(self):
+        # Normal behaviour
+        # Cannot test because MemoryFS do not support chmod
+        # self.fs.create('file.txt')
+        # self.ops.chown('file.txt', 0, 1)
+        # self.assertEqual(
+        #     self.fs.getinfo('file.txt', ['access']).uid, 0)
+        # self.assertEqual(
+        #     self.fs.getinfo('file.txt', ['access']).gid, 0)
+        # Error on non-existing path
+        with self.assertRaises(OSError) as ctx:
+            self.ops.chown('unknown', 0, 1)
+        self.assertEqual(ctx.exception.errno, errno.ENOENT)
+
+
     def test_close(self):
         self.fs.create('file.txt')
         # Normal behaviour

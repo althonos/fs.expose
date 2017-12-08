@@ -18,6 +18,7 @@ from ... import errors
 from ...enums import ResourceType, Seek
 from ...opener import open_fs
 from ...path import basename, isparent, recursepath
+from ...permissions import Permissions
 
 from .utils import convert_fs_errors, timestamp
 
@@ -87,11 +88,11 @@ class PyfilesystemFuseOperations(fuse.Operations):
 
     @convert_fs_errors
     def chmod(self, path, mode):
-        raise fuse.FuseOSError(errno.EROFS)
+        self.fs.setinfo(path, {'access': {'permissions': Permissions(mode=mode)}})
 
     @convert_fs_errors
     def chown(self, path, uid, gid):
-        raise fuse.FuseOSError(errno.EROFS)
+        self.fs.setinfo(path, {'access': {'uid': uid, 'gid': gid}})
 
     @convert_fs_errors
     def create(self, path, mode, fi=None):
