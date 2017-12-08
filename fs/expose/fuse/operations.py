@@ -85,9 +85,6 @@ class PyfilesystemFuseOperations(fuse.Operations):
     def _getfd(self):
         return next(x for x in itertools.count() if x not in self.descriptors)
 
-    def access(self, path, amode):
-        return 0
-
     @convert_fs_errors
     def chmod(self, path, mode):
         raise fuse.FuseOSError(errno.EROFS)
@@ -123,20 +120,15 @@ class PyfilesystemFuseOperations(fuse.Operations):
     def getxattr(self, path, name, position=0):
         raise fuse.FuseOSError(errno.ENOTSUP)
 
-    # @convert_fs_errors
-    # def init(self, path):
-    #     pass
-
-    def listxattr(self, path):
-        return []
-
     @convert_fs_errors
     def mkdir(self, path, mode):
         self.fs.makedir(path)
 
+    def link(self, target, source):
+        raise fuse.FuseOSError(errno.EPERM)
+
     @convert_fs_errors
     def open(self, path, flags):
-
         # if write only -> check if appending or not
         if (flags & posix.O_ACCMODE) == posix.O_WRONLY:
             mode = 'a' if (flags & posix.O_APPEND) else 'w'
@@ -146,7 +138,6 @@ class PyfilesystemFuseOperations(fuse.Operations):
         # if read-only -> check if actually writing (stat flags or truncating)
         elif (flags & posix.O_ACCMODE) == posix.O_RDONLY:
             mode = 'r+' if (flags & (posix.ST_WRITE | posix.O_TRUNC)) else 'r'
-
         fd = self._getfd()
         self.descriptors[fd] = self.fs.openbin(path, mode)
         return fd
@@ -169,16 +160,8 @@ class PyfilesystemFuseOperations(fuse.Operations):
         ]
 
     @convert_fs_errors
-    def readlink(self, path):
-        raise fuse.FuseOSError(errno.ENOENT)
-
-    @convert_fs_errors
     def release(self, path, fd):
         self.descriptors.pop(fd).close()
-
-    @convert_fs_errors
-    def removexattr(self, path, name):
-        raise fuse.FuseOSError(errno.ENOTSUP)
 
     @convert_fs_errors
     def rename(self, old, new):
@@ -212,14 +195,16 @@ class PyfilesystemFuseOperations(fuse.Operations):
                 raise fuse.FuseOSError(errno.ENOTDIR)
         self.fs.removedir(path)
 
-    def setxattr(self, path, name, value, options, position=0):
-        raise fuse.FuseOSError(errno.ENOTSUP)
-
+    @convert_fs_errors
     def statfs(self, path):
+        statfs, meta = {}, self.fs.getmeta()
+        if 'max_sys_path_length' in meta:
+            return {'f_namelen': meta['max_sys_path_length']}
         return {}
 
     def symlink(self, target, source):
-        raise fuse.FuseOSError(errno.EROFS)
+        # TODO?: support symlink
+        raise fuse.FuseOSError(errno.EPERM)
 
     @convert_fs_errors
     def truncate(self, path, length, fd=None):

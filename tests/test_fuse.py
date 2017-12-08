@@ -25,6 +25,8 @@ from fs.enums import ResourceType
 from fs.expose.fuse.operations import PyfilesystemFuseOperations
 from fs.expose.fuse.utils import timestamp
 
+from .utils import mock
+
 
 class _TestFuseMount(FSTestCases):
 
@@ -87,6 +89,20 @@ class TestAtomicOperations(unittest.TestCase):
         self.fs = fs.open_fs('mem://')
         self.ops = PyfilesystemFuseOperations(self.fs)
 
+    def test_miscellaneous(self):
+        with self.assertRaises(OSError) as handler:
+            self.ops.getxattr('/', None)
+        self.assertEqual(handler.exception.errno, errno.ENOTSUP)
+        with self.assertRaises(OSError) as handler:
+            self.ops.link('a', 'b')
+        self.assertEqual(handler.exception.errno, errno.EPERM)
+        with self.assertRaises(OSError) as handler:
+            self.ops.symlink('a', 'b')
+        self.assertEqual(handler.exception.errno, errno.EPERM)
+        with self.assertRaises(OSError) as handler:
+            self.ops('unknown')
+        self.assertEqual(handler.exception.errno, errno.ENOSYS)
+
     def test_close(self):
         self.fs.create('file.txt')
         # Normal behaviour
@@ -120,6 +136,15 @@ class TestAtomicOperations(unittest.TestCase):
         self.assertTrue(self.fs.isclosed())
         self.assertTrue(fh.closed)
         self.assertNotIn(fd, self.ops.descriptors)
+
+    def test_flush(self):
+        # Normal behaviour
+        fd = self.ops.create('abc', posix.O_RDWR)
+        self.ops.flush('abc', fd)
+        # Error on bad file descriptor
+        with self.assertRaises(OSError) as handler:
+            self.ops('flush', 'abc', fd+1)
+        self.assertEqual(handler.exception.errno, errno.EBADF)
 
     def test_getattr(self):
 
@@ -172,6 +197,9 @@ class TestAtomicOperations(unittest.TestCase):
         for i, statd in test_data:
             statinfo = PyfilesystemFuseOperations._stat_from_info(Info(i))
             self.assertEqual(statd, statinfo)
+
+        self.fs.create('abc.txt')
+        self.assertTrue(self.ops.getattr('abc.txt'))
 
     def test_makedir(self):
         # Normal behaviour
@@ -289,7 +317,6 @@ class TestAtomicOperations(unittest.TestCase):
         self.fs.makedir('a')
         self.fs.settext('a/abc.txt', 'ABC')
         self.fs.settext('a/def.txt', 'DEF')
-        self.fs.makedir('b')
         self.ops('rename', 'a', 'b')
         self.assertFalse(self.fs.exists('a'))
         self.assertTrue(self.fs.exists('b'))
@@ -335,6 +362,12 @@ class TestAtomicOperations(unittest.TestCase):
         with self.assertRaises(OSError) as handler:
             self.ops('rmdir', 'a/b/c')
         self.assertEqual(handler.exception.errno, errno.ENOTDIR)
+
+    def test_statfs(self):
+        with mock.patch.dict(self.fs._meta, {}):
+            self.assertEqual(self.ops.statfs('/'), {})
+        with mock.patch.dict(self.fs._meta, {'max_sys_path_length': 1}):
+            self.assertEqual(self.ops.statfs('/'), {'f_namelen': 1})
 
     def test_truncate(self):
         # Normal behaviour
